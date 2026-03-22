@@ -70,19 +70,15 @@ export default function Chat() {
 
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const abortRef = useRef(null);
 
-  /* scroll to bottom */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  /* auto-start if mode passed via nav state */
   useEffect(() => {
     if (location.state?.mode) startInterview(location.state.mode);
   }, []); // eslint-disable-line
 
-  /* textarea auto-resize */
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -90,20 +86,41 @@ export default function Chat() {
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
   }, [input]);
 
-  const callClaude = useCallback(async (msgs, sysPrompt) => {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+  /* ── GEMINI API CALL ── */
+  const callGemini = useCallback(async (msgs, sysPrompt) => {
+    const apiKey = 'AIzaSyCeJO17o0ohELO5SUNZKmCN_I50f6yiB8w';
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;    // Convert chat history to Gemini format
+    const contents = msgs
+      .filter(m => m.role !== 'system')
+      .map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+
+    const body = {
+      system_instruction: {
+        parts: [{ text: sysPrompt }],
+      },
+      contents,
+      generationConfig: {
+        maxOutputTokens: 1000,
+        temperature: 0.7,
+      },
+    };
+
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: sysPrompt,
-        messages: msgs,
-      }),
+      body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`API error ${res.status}`);
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err?.error?.message || 'Gemini API error ' + res.status);
+    }
+
     const data = await res.json();
-    return data.content?.map(b => b.text || '').join('') || '';
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   }, []);
 
   const startInterview = async (selectedMode) => {
@@ -117,7 +134,7 @@ export default function Chat() {
     const sysPrompt = buildSystemPrompt(selectedMode);
     try {
       const initMsgs = [{ role: 'user', content: START_PROMPT }];
-      const reply = await callClaude(initMsgs, sysPrompt);
+      const reply = await callGemini(initMsgs, sysPrompt);
       const newHistory = [
         { role: 'user', content: START_PROMPT },
         { role: 'assistant', content: reply },
@@ -125,7 +142,8 @@ export default function Chat() {
       setHistory(newHistory);
       setMessages([{ role: 'assistant', content: reply, id: Date.now() }]);
     } catch (e) {
-      setMessages([{ role: 'assistant', content: '⚠️ Could not connect. Please check your setup.', id: Date.now(), error: true }]);
+      console.error(e);
+      setMessages([{ role: 'assistant', content: '⚠️ Could not connect. Please check your REACT_APP_GEMINI_API_KEY in the .env file.', id: Date.now(), error: true }]);
     }
     setLoading(false);
   };
@@ -145,11 +163,12 @@ export default function Chat() {
 
     const sysPrompt = buildSystemPrompt(mode);
     try {
-      const reply = await callClaude(newHistory, sysPrompt);
+      const reply = await callGemini(newHistory, sysPrompt);
       const aiMsg = { role: 'assistant', content: reply, id: Date.now() + 1 };
       setMessages(prev => [...prev, aiMsg]);
       setHistory(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (e) {
+      console.error(e);
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Request failed. Try again.', id: Date.now(), error: true }]);
     }
     setLoading(false);
@@ -219,9 +238,9 @@ export default function Chat() {
             <div className="sidebar-section">
               <div className="sidebar-label">TIPS</div>
               <div className="tips">
-                <div className="tip">💡 Answer clearly & concisely</div>
+                <div className="tip">💡 Answer clearly &amp; concisely</div>
                 <div className="tip">🧠 Think before typing</div>
-                <div className="tip">📝 Use "I don't know" if stuck</div>
+                <div className="tip">📝 Use I dont know if stuck</div>
                 <div className="tip">⏱ Take your time — no rush</div>
               </div>
             </div>
@@ -233,7 +252,6 @@ export default function Chat() {
 
           {/* ── CHAT MAIN ── */}
           <div className="chat-main">
-            {/* top bar */}
             <div className="chat-topbar">
               <div className="topbar-left">
                 <div className="topbar-avatar">🎯</div>
@@ -247,21 +265,20 @@ export default function Chat() {
               </div>
               <div className="topbar-right">
                 <div className="qa-badge">
-                  <span>Q&A</span>
+                  <span>Q&amp;A</span>
                   <span className="qa-num">{qaCount}</span>
                 </div>
                 <button className="topbar-reset" onClick={resetSession}>New Session</button>
               </div>
             </div>
 
-            {/* messages */}
             <div className="messages-area">
               {messages.map(msg => (
-                <div key={msg.id} className={`msg-row ${msg.role}`}>
+                <div key={msg.id} className={'msg-row ' + msg.role}>
                   <div className="msg-avatar">
                     {msg.role === 'assistant' ? '🎯' : '👤'}
                   </div>
-                  <div className={`msg-bubble ${msg.error ? 'error' : ''}`}>
+                  <div className={'msg-bubble ' + (msg.error ? 'error' : '')}>
                     {msg.role === 'assistant' ? (
                       <p
                         className="mp"
@@ -285,7 +302,6 @@ export default function Chat() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* quick actions */}
             <div className="quick-actions">
               {QUICK_ACTIONS.map(q => (
                 <button
@@ -299,7 +315,6 @@ export default function Chat() {
               ))}
             </div>
 
-            {/* input */}
             <div className="chat-input-area">
               <div className="input-wrap">
                 <textarea
@@ -307,7 +322,7 @@ export default function Chat() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type your answer… (Enter to send, Shift+Enter for new line)"
+                  placeholder="Type your answer... (Enter to send, Shift+Enter for new line)"
                   rows={1}
                   disabled={loading}
                   className="chat-textarea"
@@ -324,7 +339,7 @@ export default function Chat() {
                   )}
                 </button>
               </div>
-              <div className="input-hint">Enter ↵ to send · Shift+Enter for new line</div>
+              <div className="input-hint">Enter to send · Shift+Enter for new line</div>
             </div>
           </div>
         </div>

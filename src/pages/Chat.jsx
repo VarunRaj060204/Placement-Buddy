@@ -88,7 +88,7 @@ export default function Chat() {
 
   /* ── GEMINI API CALL ── */
   const callGemini = useCallback(async (msgs, sysPrompt) => {
-    const apiKey = 'AIzaSyCeJO17o0ohELO5SUNZKmCN_I50f6yiB8w';
+    const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;    // Convert chat history to Gemini format
     const contents = msgs
       .filter(m => m.role !== 'system')
